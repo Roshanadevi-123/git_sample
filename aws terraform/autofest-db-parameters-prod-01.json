@@ -1,0 +1,152 @@
+[
+    {
+        "name": "audit_sys_operations",
+        "value": "TRUE",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "audit_trail",
+        "value": "DB",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "commit_point_strength",
+        "value": "1",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "control_file_record_keep_time",
+        "value": "36",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "cpu_count",
+        "value": "2",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "cursor_sharing",
+        "value": "EXACT",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "db_block_checksum",
+        "value": "TRUE",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "db_domain",
+        "value": "MERCK",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "db_files",
+        "value": "1024",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "distributed_lock_timeout",
+        "value": "60",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "dml_locks",
+        "value": "3396",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "global_names",
+        "value": "FALSE",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "java_jit_enabled",
+        "value": "TRUE",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "job_queue_processes",
+        "value": "10",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "max_dump_file_size",
+        "value": "10M",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "nls_date_format",
+        "value": "DD-MON-RR",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "nls_length_semantics",
+        "value": "BYTE",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "open_cursors",
+        "value": "1000",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "parallel_threads_per_cpu",
+        "value": "1",
+        "apply_method": "immediate"
+    },
+    {
+        "name": "processes",
+        "value": "500",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "query_rewrite_enabled",
+        "value": "TRUE",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "recyclebin",
+        "value": "OFF",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "resource_limit",
+        "value": "TRUE",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "sessions",
+        "value": "772",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "timed_statistics",
+        "value": "TRUE",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "transactions",
+        "value": "849",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "transactions_per_rollback_segment",
+        "value": "5",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "undo_retention",
+        "value": "3600",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "sqlnetora.sqlnet.inbound_connect_timeout",
+        "value": "0",
+        "apply_method": "pending-reboot"
+    },
+    {
+        "name": "sqlnetora.sqlnet.expire_time",
+        "value": "10",
+        "apply_method": "pending-reboot"
+    }
+]

@@ -1,0 +1,113 @@
+<#------------------- Create Parent Folder - PRRDailyJob--------------------#>
+New-Item "C:\PRR_Monitoring" -Type Directory
+New-Item "D:\PRR_Monitoring\LogFiles" -Type Directory
+New-Item "D:\PPRMLog" -Type Directory
+New-Item "D:\PPRMLog\pslog.txt" -Type File
+
+$acl = Get-Acl "D:\PPRMLog"
+$accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS_IUSRS", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl.SetAccessRule($accessRule)
+$acl | Set-Acl "D:\PPRMLog"
+ <#------------------- This folder is required to work on Word object--------------------#>
+New-Item "C:\Windows\System32\config\systemprofile\Desktop" -Type Directory
+
+$acl = Get-Acl "C:\Windows\System32\config\systemprofile\Desktop"
+$accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS_IUSRS", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl.SetAccessRule($accessRule)
+$acl | Set-Acl "C:\Windows\System32\config\systemprofile\Desktop"
+
+$acl1 = Get-Acl "C:\Windows\System32\config\systemprofile\Desktop"
+$accessRule1 = New-Object System.Security.AccessControl.FileSystemAccessRule("NORTHAMERICA\srvautofestcicd", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl1.SetAccessRule($accessRule1)
+$acl1 | Set-Acl "C:\Windows\System32\config\systemprofile\Desktop"
+ 
+ <#------------ Download Articats from Artifactory ----------------- #>
+
+$wc = New-Object net.webclient
+
+$wc.Downloadfile("https://artifacts.merck.com/artifactory/generic-autofest-prrmonitoring-dev-local/BUILDS/PRRMonitoring-1.0.0.17.zip","C:\PRR_Monitoring\PRR_Monitoring-1.0.0.17.zip")
+ 
+<#--------------- Extract Artifacts(Zip folder) --------------- #>
+
+Expand-Archive -LiteralPath C:\PRR_Monitoring\PRR_Monitoring-1.0.0.17.zip -DestinationPath C:\PRR_Monitoring
+ 
+<#----------------- Set Access on downloaded folder ----------------------#>
+
+$acl = Get-Acl "C:\PRR_Monitoring"
+
+$rule = New-Object  System.Security.Accesscontrol.FileSystemAccessRule("NT AUTHORITY\SYSTEM","Fullcontrol","Allow")
+
+$acl.SetAccessRule($rule)
+
+Set-Acl "C:\PRR_Monitoring" $acl
+
+$acl1 = Get-Acl "C:\PRR_Monitoring"
+
+$rule1 = New-Object  System.Security.Accesscontrol.FileSystemAccessRule("NORTHAMERICA\srvautofestcicd","Fullcontrol","Allow")
+
+$acl1.SetAccessRule($rule1)
+
+Set-Acl "C:\PRR_Monitoring" $acl1
+ 
+<#------------------Schedule PRR_Monitoring Task Scheduler---------------#>
+
+$action = New-ScheduledTaskAction -Execute 'C:\PRR_Monitoring\bin\Debug\PRRMonitoring.exe' -Argument "C:\PRR_Monitoring\bin\Debug\PRRMonitoring.exe"
+
+$trigger =  New-ScheduledTaskTrigger -Daily -At 03:01am
+
+$Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "PRDailyJob" -Description "PRDailyJob" -Principal $Principal
+
+$Task = Get-ScheduledTask -TaskName 'PRDailyJob' 
+$Task | Set-ScheduledTask -User 'NORTHAMERICA\srvautofestcicd' -Password 'Migr@tion@2cloud'
+
+<#--------------- Change DCOM config Security Settings for MS Word-------------#>
+
+$user = "srvautofestcicd"
+$domain = "NORTHAMERICA"
+$appdesc = "Microsoft SQL Server Integration Services 11.0"
+#$app = get-wmiobject -query ('SELECT * FROM Win32_DCOMApplicationSetting WHERE Description = "' + $appdesc + '"') -enableallprivileges
+$ap#pid = "{00020906-0000-0000-C000-000000000046}"
+$app = get-wmiobject -query ('SELECT * FROM Win32_DCOMApplicationSetting WHERE AppId = "' + $appid + '"') -enableallprivileges
+$sdRes = $app.GetLaunchSecurityDescriptor()
+$sd = $sdRes.Descriptor
+$trustee = ([wmiclass] 'Win32_Trustee').CreateInstance()
+$trustee.Domain = $domain
+$trustee.Name = $user
+$fullControl = 31
+$localLaunchActivate = 11
+$ace = ([wmiclass] 'Win32_ACE').CreateInstance()
+$ace.AccessMask = $localLaunchActivate
+$ace.AceFlags = 0
+$ace.AceType = 0
+$ace.Trustee = $trustee
+[System.Management.ManagementBaseObject[]] $newDACL = $sd.DACL + @($ace)
+$sd.DACL = $newDACL
+$app.SetLaunchSecurityDescriptor($sd)
+
+$user = "IIS_IUSRS"
+#$domain = "NORTHAMERICA"
+$appdesc = "Microsoft SQL Server Integration Services 11.0"
+#$app = get-wmiobject -query ('SELECT * FROM Win32_DCOMApplicationSetting WHERE Description = "' + $appdesc + '"') -enableallprivileges
+$ap#pid = "{00020906-0000-0000-C000-000000000046}"
+$app = get-wmiobject -query ('SELECT * FROM Win32_DCOMApplicationSetting WHERE AppId = "' + $appid + '"') -enableallprivileges
+$sdRes = $app.GetLaunchSecurityDescriptor()
+$sd = $sdRes.Descriptor
+$trustee = ([wmiclass] 'Win32_Trustee').CreateInstance()
+#$trustee.Domain = $domain
+$trustee.Name = $user
+$fullControl = 31
+$localLaunchActivate = 11
+$ace = ([wmiclass] 'Win32_ACE').CreateInstance()
+$ace.AccessMask = $localLaunchActivate
+$ace.AceFlags = 0
+$ace.AceType = 0
+$ace.Trustee = $trustee
+[System.Management.ManagementBaseObject[]] $newDACL = $sd.DACL + @($ace)
+$sd.DACL = $newDACL
+$app.SetLaunchSecurityDescriptor($sd)
+
+$keypath = "HKLM:\SOFTWARE\Classes\AppID\{00020906-0000-0000-C000-000000000046}"
+Set-ItemProperty -Path $keypath -Name RunAs -Value NORTHAMERICA\srvautofestcicd
+<#------------------------------------------*************END******************************************--------------------------------------------#>

@@ -1,0 +1,43 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "DenyEveryoneElse",
+            "Effect": "Deny",
+            "Principal": {
+                "AWS": "*"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::${bucket_name}/*",
+                "arn:aws:s3:::${bucket_name}"
+            ],
+            "Condition": {
+                "ArnNotEquals": {
+                    "aws:PrincipalArn": [
+                        "arn:aws:iam::${var.account_no}:role/${var.base_role}",
+                        "arn:aws:iam::${var.account_no}:role/${var.iam_role}",
+                        "arn:aws:iam::${var.account_no}:role/${var.admin_role}"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "DenyInsecureCommunications",
+            "Effect": "Deny",
+            "Principal": {
+                "AWS": "*"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::${bucket_name}/*",
+                "arn:aws:s3:::${bucket_name}"
+            ],
+            "Condition": {
+                "Bool": {
+                    "aws:SecureTransport": "false"
+                }
+            }
+        }
+    ]
+  }

@@ -1,0 +1,197 @@
+<powershell>
+Start-Transcript -Path "C:\app-install\logs\Userdata_logs.txt" -Append -IncludeInvocationHeader
+ 
+Set-ExecutionPolicy Unrestricted -force
+#Disk partition
+Write-Host Disk partition starts
+Get-Disk | Where-Object PartitionStyle -Eq "RAW" | Initialize-Disk -PassThru | New-Partition -DriveLetter D -UseMaximumSize | Format-Volume
+Set-Volume -DriveLetter D -NewFileSystemLabel "Data Disk"
+# ------------------------ Installation and config of required apps started ------------------------
+Write-Host "Adding proxy"
+set HTTP_PROXY=http://webproxy.merck.com:8080
+set HTTPS_PROXY=http://webproxy.merck.com:8080
+ 
+$workdir = "C:\app-install\"
+# Check if work directory exists if not create it
+If (Test-Path -Path $workdir -PathType Container)
+{ Write-Host "$workdir already exists" -ForegroundColor Red }
+ELSE { New-Item -Path $workdir  -ItemType directory }
+Write-Host "$(Get-Date) - Installing AWSCLI"
+$cli_source = "https://awscli.amazonaws.com/AWSCLIV2.msi"
+$cli_destination = "$workdir\AWSCLIV2.msi"
+Invoke-WebRequest $cli_source -OutFile $cli_destination
+Start-Process -Wait -PassThru -FilePath msiexec.exe -ArgumentList  "/I C:\app-install\AWSCLIV2.msi /quiet"
+sleep 60
+Write-Host "Installing AWS SSM Agent"
+$progressPreference = 'silentlyContinue'
+Invoke-WebRequest `
+https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
+-OutFile $env:USERPROFILE\Desktop\SSMAgent_latest.exe
+Start-Process `
+-FilePath $env:USERPROFILE\Desktop\SSMAgent_latest.exe `
+-ArgumentList "/S"
+sleep 30
+
+Write-Host "Turning off IE Enhanced security"
+$AdminKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+$UserKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
+Set-ItemProperty -Path $AdminKey -Name "IsInstalled" -Value 0
+Set-ItemProperty -Path $UserKey -Name "IsInstalled" -Value 0
+ 
+sleep 30
+ 
+Start-Sleep -Seconds 50
+ 
+$Tower_Secret_ASM = "srvautofestcicd"
+$Tower_SecretObj = (Get-SECSecretValue -SecretId $Tower_Secret_ASM)
+$Tower_Secret = ($Tower_SecretObj.SecretString  | ConvertFrom-Json)
+ 
+$token = $Tower_Secret.pass
+ 
+ 
+# ------------------------ Installation and config of required apps completed ------------------------
+Write-Host "Ignore Selft-signed certificates"
+add-type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(
+        ServicePoint srvPoint, X509Certificate certificate,
+        WebRequest request, int certificateProblem) {
+        return true;
+    }
+}
+"@
+$AllProtocols = [System.Net.SecurityProtocolType]'Ssl3,Tls12,Tls13'
+[System.Net.ServicePointManager]::SecurityProtocol = $AllProtocols
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+Write-Host "Retrieving Ansible Tower API token"
+$Tower_Secret_ASM = "test/ansible/token"
+$Tower_SecretObj = (Get-SECSecretValue -SecretId $Tower_Secret_ASM)
+$Tower_Secret = ($Tower_SecretObj.SecretString  | ConvertFrom-Json)
+$currIP = (Get-NetIPAddress | Where-Object {$_.AddressState -eq "Preferred" -and $_.ValidLifetime -lt "24:00:00"}).IPAddress
+$token = $Tower_Secret.Token
+$computername = (Get-CimInstance -ClassName Win32_ComputerSystem).Name
+$computername= $computername.substring($computername.length - 4, 4)
+Write-Output $computername
+$Instance = "autot"
+$cloud = "aws"
+$env = "d"
+$newname = $cloud + $Instance +$env + $computername 
+Write-Output $newname
+Write-Host "Hostname: $newname :: IP: $currIP"$headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+$headers = @{ }
+$headers.Add("Authorization", "Bearer "+$token)
+$payload =
+[Ordered]@{
+extra_vars = @{
+    "survey_hostname" = "$currIP"
+    "HNAME" = "$newname"
+    "winrm_connect_mode" = "http"
+    }
+} | ConvertTo-Json
+
+$payload_dns =
+[Ordered]@{
+extra_vars = @{
+    "server_name" = "$newname.merck.com"
+    "server_ip_address" = "$currIP"
+    }
+} | ConvertTo-Json
+
+$prv_secret_ASM = "test/ec2/prvclouduser"
+$prv_SecretObj = (Get-SECSecretValue -SecretId $prv_secret_ASM)
+$prvSecret = ($prv_SecretObj.SecretString  | ConvertFrom-Json)
+#Write-Host "Creating adminuser"
+#$local_username = "adminuser"
+#$local_userpwd = $prvSecret.password
+#net user "adminuser" $local_userpwd /add
+#net localgroup "Administrators" "adminuser" /add
+ 
+ 
+function mandate-install {
+    $packages = New-Object -TypeName 'System.Collections.ArrayList'
+    $packages.add("Microsoft SCCM Client")
+    $packages.add("Amazon Cloud Watch Agent")
+    $packages.add("Splunk Universal Forwarder")
+    $packages.add("AddGblGroupsR2x64")
+    $packages.add("Windows Defender PostLaunch")
+    $packages.add("Qualys Agent Postlaunch(AWS)")
+    $packages.add("Splunk UF Postlaunch(AWS)")
+    $packages.add("PFE Remediation Agent")
+    $packages.add("Crowd Strike")
+    $ec2ipaddr = (Get-NetIPAddress | Where-Object {$_.AddressState -eq "Preferred" -and $_.ValidLifetime -lt "24:00:00"}).IPAddress
+    $apiEndpoint = "https://ansibletower.merck.com"
+    $url = "${apiEndpoint}/api/v2/job_templates/840/launch/"
+    $token = $Tower_Secret.Token
+    $headers = @{
+        Authorization = "Bearer " + $token
+       }
+    $payload = @{
+        extra_vars = @{
+          "manual_application_list" = $packages
+          "server_hostname" = $ec2ipaddr
+          "server_cloud" = "aws"
+          "server_os_version" = "W2019"
+          "winrm_connect_mode" = "http"
+          "pama_type" = "gio"
+}
+} | ConvertTo-Json
+        $result = Invoke-RestMethod -Verbose -Uri $url -Method POST -Headers $headers -ContentType 'application/json' -Body $payload
+        $jobapi = $result.url
+        $statusurl = "${apiEndpoint}${jobapi}"
+          Do {
+             Write-Host "app install is pending"
+             Start-Sleep 30
+          }
+         Until ((Invoke-RestMethod -Verbose -Uri $statusurl -Method GET -Headers $headers -ContentType 'application/json').status -ne "pending" -And (Invoke-RestMethod -Verbose -Uri $statusurl -Method GET -Headers $headers -ContentType 'application/json').status -ne "running"  )
+    $statusresponse=(Invoke-RestMethod -Verbose -Uri $statusurl -Method GET -Headers $headers -ContentType 'application/json').status
+    Write-Output "The response is $statusresponse"
+    if ($statusresponse -eq "successful") {
+      Write-Output "app install is successful"
+    }
+   else {
+      Write-Output "app install has failed"
+}                
+}
+mandate-install
+ 
+sleep 300
+ 
+Write-Host "Creating prvclouduser"
+$local_username = $prvSecret.user
+$local_userpwd = $prvSecret.password
+net user "prvclouduser" $local_userpwd /add
+net localgroup "Administrators" "prvclouduser" /add
+Write-Host "Executing domain join playbook"
+Invoke-RestMethod -Method Post -Uri https://ansibletower.merck.com/api/v2/job_templates/1068/launch/ -Headers $headers -Body $payload_dns -ContentType "application/json" -UseBasicParsing
+Invoke-RestMethod -Method Post -Uri https://ansibletower.merck.com/api/v2/job_templates/924/launch/ -Headers $headers -Body $payload -ContentType "application/json" -UseBasicParsing
+Write-Host "Adding service user as an administrator"
+$LC_Secret_ASM = "test/ec2/adminuser"
+$LC_SecretObj = (Get-SECSecretValue -SecretId $LC_Secret_ASM)
+$LCSecret = ($LC_SecretObj.SecretString  | ConvertFrom-Json)
+$LCPassword = $LCSecret.password
+$password = ConvertTo-SecureString $LCPassword -AsPlainText -Force
+New-LocalUser -Name "admin" -Password $password -FullName "admin" -Description "admin1" -PasswordNeverExpires:$true
+Add-LocalGroupMember -Group "Administrators" -Member "admin"
+Add-LocalGroupMember -Group "Administrators" -Member "NORTHAMERICA\srvautofestcicd"
+Write-Host "Userdata finished"
+
+sleep 300
+Write-Host "IIS Web Config"
+Import-Module ServerManager;
+Enable-WindowsOptionalFeature -Online -NoRestart -FeatureName 'IIS-ISAPIFilter','IIS-WebServer','IIS-ManagementConsole',
+'IIS-ManagementService','IIS-IIS6ManagementCompatibility', 'IIS-Metabase', 'IIS-WMICompatibility',
+'IIS-ManagementScriptingTools', 'IIS-ManagementService' -ALL
+ 
+Start-Sleep -Seconds 50
+Install-Module -Name AWSPowerShell -Force -SkipPublisherCheck
+
+
+Write-Host "Downloading powershell script and placing in local folder"
+cd 'C:\Program Files\Amazon\AWSCLIV2'
+.\aws s3 cp "s3://autofest-useast1-test-iis/prruserdata1.ps1" "C:\app-install\prruserdata1.ps1" 
+& "C:\app-install\prruserdata1.ps1"
+
+</powershell>
+<persist>true</persist> 

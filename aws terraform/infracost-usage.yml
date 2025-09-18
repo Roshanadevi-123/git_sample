@@ -1,0 +1,21 @@
+#########################################################################################################
+# This file allows you to perform cost estimation for usage-based resources.
+### Simply modify the parameters below to set usage expectations for your services and/or individual resources 
+### Refer to this page for all available usage parameters published by Infracost - 
+### https://github.com/infracost/infracost/blob/master/infracost-usage-example.yml
+#########################################################################################################
+
+version: 0.1
+##### UNCOMMENT the block below to specify usage for certain AWS services. 
+##### In the example below, the cost of each DynamoDB table will be estimated based on the parameter values ######
+# resource_type_default_usage:
+#   aws_dynamodb_table:
+#     monthly_write_request_units: 5000000
+#     storage_gb: 1000 # Set in all DynamoDB table resources
+
+##### UNCOMMENT the block below to specify usage for specific resources. 
+##### An example Lambda function is shown below
+# resource_usage:
+#   aws_lambda_function.my_function:
+#     monthly_requests: 100000 # Monthly requests to the Lambda function.
+#     request_duration_ms: 500 # Average duration of each request in milliseconds.

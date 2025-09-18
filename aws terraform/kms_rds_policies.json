@@ -1,0 +1,70 @@
+{
+    "Version": "2012-10-17",
+    "Id": "autofest-rds-KeyPolicy",
+    "Statement": [
+        {
+            "Sid": "Allow access through RDS for all principals in the account that are authorized to use RDS",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "*"
+            },
+            "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+                "kms:CreateGrant",
+                "kms:ListGrants",
+                "kms:DescribeKey"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": {
+                    "kms:CallerAccount": "${account_number}",
+                    "kms:ViaService": "rds.${region}.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "Allow direct access to key metadata to the account",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::${account_number}:root"
+                    },
+            "Action": [
+                "kms:Describe*",
+                "kms:Get*",
+                "kms:List*",
+                "kms:RevokeGrant"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowKeyAdministrationByRoot",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::${account_number}:role/${admin_role}",
+                    "arn:aws:iam::${account_number}:root"
+                ]
+            },
+            "Action": [
+                "kms:Update*",
+                "kms:ScheduleKeyDeletion",
+                "kms:Revoke*",
+                "kms:Put*",
+                "kms:List*",
+                "kms:Get*",
+                "kms:Enable*",
+                "kms:Disable*",
+                "kms:Describe*",
+                "kms:Delete*",
+                "kms:Create*",
+                "kms:CancelKeyDeletion",
+                "kms:TagResource",
+                "kms:UntagResource"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

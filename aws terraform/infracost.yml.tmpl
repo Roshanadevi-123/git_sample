@@ -1,0 +1,9 @@
+version: 0.1
+projects:
+{{- range $project := matchPaths "iac/terraform.:env.tfvars" }}
+    - path: iac
+      name: {{ $project.env }}
+      terraform_var_files:
+        - terraform.{{ $project.env }}.tfvars
+      usage_file: ./usage/infracost-usage.yml
+{{- end }}

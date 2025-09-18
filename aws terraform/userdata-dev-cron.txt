@@ -1,0 +1,36 @@
+ <#------------------- Create Parent Folder - PRRDailyJob--------------------#>
+New-Item "C:\PRR_Monitoring" -Type Directory
+New-Item "C:\PRR_Monitoring\LogFiles" -Type Directory
+ 
+ 
+ <#------------ Download Articats from Artifactory ----------------- #>
+
+$wc = New-Object net.webclient
+
+$wc.Downloadfile("https://artifacts.merck.com/artifactory/generic-autofest-prrmonitoring-dev-local/BUILDS/PRRMonitoring-1.0.0.17.zip","C:\PRR_Monitoring\PRR_Monitoring-1.0.0.17.zip")
+ 
+<#--------------- Extract Artifacts(Zip folder) --------------- #>
+
+Expand-Archive -LiteralPath C:\PRR_Monitoring\PRR_Monitoring-1.0.0.17.zip -DestinationPath C:\PRR_Monitoring
+ 
+<#----------------- Set Access on downloaded folder ----------------------#>
+
+$acl = Get-Acl "C:\PRR_Monitoring"
+
+$rule = New-Object  System.Security.Accesscontrol.FileSystemAccessRule("NT AUTHORITY\SYSTEM","Fullcontrol","Allow")
+
+$acl.SetAccessRule($rule)
+
+Set-Acl "C:\PRR_Monitoring" $acl
+ 
+<#------------------Schedule PRR_Monitoring Task Scheduler---------------#>
+
+$action = New-ScheduledTaskAction -Execute 'PRRMonitoring.exe' -Argument "C:\PRR_Monitoring\PRR_Monitoring\bin\Release\PRRMonitoring.exe"
+
+$trigger =  New-ScheduledTaskTrigger -Daily -At 03:01am
+
+$Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount
+
+Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "PRDailyJob" -Description "PRDailyJob" -Principal $Principal
+
+<#------------------------------------------*************END******************************************--------------------------------------------#>

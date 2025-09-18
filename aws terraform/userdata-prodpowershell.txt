@@ -1,0 +1,108 @@
+<#-------------------------- Add System Variable -----------------------#>
+$variableNameToAdd = "ENVIRONMENT"
+$variableValueToAdd = "PROD"
+[System.Environment]::SetEnvironmentVariable($variableNameToAdd, $variableValueToAdd, [System.EnvironmentVariableTarget]::Machine)
+
+<#---------- Install Windows Authentication Feature-------------#>
+Install-WindowsFeature "Web-Windows-Auth" -IncludeManagementTools ; 
+
+<#-----------------Install ASP.NET feature-----------------#>
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-ASPNET, IIS-ManagementConsole -All
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-NetFxExtensibility45
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-ASPNET45
+
+<#------------ Download Articats from Artifactory -----------------#>
+New-Item "C:\inetpub\wwwroot\PRR" -Type Directory
+New-Item "C:\inetpub\wwwroot\log.txt" -Type File
+New-Item "C:\PRRPackage" -Type Directory
+$wc = New-Object net.webclient
+$wc.Downloadfile("https://artifacts.merck.com/artifactory/generic-autofest-dev-local/BUILDS/PRR-1.0.0.46.zip","C:\PRRPackage\PRR-1.0.0.46.zip")
+Expand-Archive -LiteralPath C:\PRRPackage\PRR-1.0.0.46.zip -DestinationPath C:\inetpub\wwwroot\PRR
+
+<#------------ Move bin and other required folders -----------------#>
+Copy-Item -Path "C:\inetpub\wwwroot\PRR\PRR\publish\_PublishedWebsites\PRR1\*" -Destination "C:\inetpub\wwwroot\PRR\PRR\" -recurse -Force
+
+<#---------- Remove unwanted publish folder ---------------------------#>
+Remove-Item "C:\inetpub\wwwroot\PRR\PRR\publish" -Force  -Recurse -ErrorAction SilentlyContinue
+
+<#--------------- Download PRRDocuments and Files from S3 -------------------------#>
+Read-S3Object -BucketName autofest-useast1-prod-prrdoc -Key Files.zip -File C:\PRRPackage\Files.zip
+Read-S3Object -BucketName autofest-useast1-prod-prrdoc -Key PRRDocuments.zip -File C:\PRRPackage\PRRDocuments.zip
+Expand-Archive -LiteralPath C:\PRRPackage\Files.zip -DestinationPath C:\PRRPackage
+Expand-Archive -LiteralPath C:\PRRPackage\PRRDocuments.zip -DestinationPath C:\PRRPackage
+Remove-Item "C:\inetpub\wwwroot\PRR\PRR\Files" -Force  -Recurse -ErrorAction SilentlyContinue
+New-Item "C:\inetpub\wwwroot\PRR\PRR\Files" -Type Directory
+Copy-Item -Path "C:\PRRPackage\Files\*" -Destination "C:\inetpub\wwwroot\PRR\PRR\Files\" -recurse -Force
+
+New-Item "C:\inetpub\wwwroot\PRR\PRR\PRRDocuments" -Type Directory
+Copy-Item -Path "C:\PRRPackage\PRRDocuments\*" -Destination "C:\inetpub\wwwroot\PRR\PRR\PRRDocuments\" -recurse -Force
+
+<#---------- Create  website and deploy on C: ----------------#>
+Import-Module "WebAdministration"
+New-Item IIS:\AppPools\PRR
+New-Item IIS:\Sites\PRR -physicalPath C:\inetpub\wwwroot\PRR\PRR -bindings @{protocol="http";bindingInformation=":80:"}
+Set-ItemProperty IIS:\Sites\PRR -name applicationPool -value PRR
+
+<#--------------------- Set IIS_IUSRS ACCESS Web Site and Application---------------#>
+$acl = Get-Acl "C:\inetpub\wwwroot"
+$accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS_IUSRS", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl.SetAccessRule($accessRule)
+$acl | Set-Acl "C:\inetpub\wwwroot"
+
+<#---------------- Enable anonymous--------------------#>
+Set-WebConfigurationProperty -filter "/system.webserver/security/authentication/anonymousAuthentication" -PSPath "IIS:\" -location "PRR" -name "enabled" -value "True" ;
+
+<#-------------------------- Add Default Document -----------------------------------#>
+Add-WebConfiguration //defaultDocument/files "IIS:\sites\PRR" -atIndex 0 -Value @{value="Login.aspx"}
+
+<#-------------------- Set Load User Profile for environment variable to fetch value -------------------#>
+Import-Module WebAdministration
+Set-ItemProperty "IIS:\AppPools\PRR" -Name "processModel.loadUserProfile" -Value "True"
+
+
+<#------------------------------install SSL cert--------------------------------------------------#>
+New-Item "C:\iiscert" -Type Directory
+ 
+Read-S3Object -BucketName autofest-useast1-test-iis -Key prrgenerator-test.merck.com.pfx -File c:\iiscert\prrgenerator-test.merck.com.pfx
+ 
+$certPath = "c:\iiscert\prrgenerator-test.merck.com.pfx"  
+$Secret_ASM = "certpass"
+$SecretObj = (Get-SECSecretValue -SecretId $Secret_ASM)
+$secret = ($SecretObj.SecretString  | ConvertFrom-Json)
+$certpass = $secret.certpass
+$pfx = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2  
+$pfx.Import($certPath,$certPass,"Exportable,PersistKeySet")   
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("WebHosting","LocalMachine")   
+$store.Open("ReadWrite")  
+$store.Add($pfx)   
+$store.Close()   
+$certThumbprint = $pfx.Thumbprint
+ 
+New-WebBinding -Name "PRR" -IP "*" -Port 443 -HostHeader "prr.merck.com" -Protocol https -SslFlags 0;
+$SslBinding = Get-WebBinding -Name "PRR" -Protocol "https";
+$SslBinding.AddSslCertificate($certThumbprint, "WebHosting");
+ 
+Get-WebBinding -Port 80 -Name "PRR" | Remove-WebBinding;
+
+ 
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My","LocalMachine")   
+$store.Open("ReadWrite")  
+$store.Add($pfx)   
+$store.Close()  
+ 
+$WMIPATH = (Get-WmiObject -class "Win32_TSGeneralSetting" -Namespace root\cimv2\terminalservices)
+Set-WmiInstance -Path $WMIPATH -argument @{SSLCertificateSHA1Hash=$certThumbprint}
+ 
+reg add “HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server” /v “DisabledByDefault” /t REG_DWORD /d 1 /f
+reg add “HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server” /v “Enabled” /t REG_DWORD /d 0 /f
+ 
+ 
+<#------------------------------install RDS cert--------------------------------------------------#> 
+
+New-Item "C:\RDS_CERT" -Type Directory
+
+$wc = New-Object net.webclient
+$wc.Downloadfile("https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.p7b","C:\RDS_CERT\us-east-1-bundle.p7b")
+
+Import-Certificate -FilePath C:\RDS_CERT\us-east-1-bundle.p7b `
+   -CertStoreLocation Cert:\LocalMachine\Root\
